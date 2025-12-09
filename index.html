@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Induction Motor Rotor Parameter Explorer</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <!-- Plotly CDN -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Induction Motor Rotor Parameter Explorer</h1>
+    <p>Interactively explore how rotor resistance (<code>R<sub>2</sub></code>) and rotor reactance (<code>X<sub>2</sub></code>) affect torque and stator current across load (slip).</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <h2>Motor Parameters</h2>
+      <div class="grid">
+        <!-- Rotor controls -->
+        <div class="control">
+          <label for="r2">Rotor resistance R<sub>2</sub> (Ω)</label>
+          <input type="range" id="r2" min="0.05" max="2" step="0.01" value="0.3" />
+          <span id="r2_val">0.30 Ω</span>
+        </div>
+        <div class="control">
+          <label for="x2">Rotor reactance X<sub>2</sub> (Ω)</label>
+          <input type="range" id="x2" min="0.05" max="2" step="0.01" value="0.5" />
+          <span id="x2_val">0.50 Ω</span>
+        </div>
+
+        <!-- Advanced (stator & system) -->
+        <details class="advanced" open>
+          <summary>Advanced parameters</summary>
+          <div class="control">
+            <label for="r1">Stator resistance R<sub>1</sub> (Ω)</label>
+            <input type="number" id="r1" step="0.01" value="0.5" />
+          </div>
+          <div class="control">
+            <label for="x1">Stator reactance X<sub>1</sub> (Ω)</label>
+            <input type="number" id="x1" step="0.01" value="1.5" />
+          </div>
+          <div class="control">
+            <label for="xm">Magnetizing reactance X<sub>m</sub> (Ω)</label>
+            <input type="number" id="xm" step="0.1" value="30" />
+          </div>
+          <div class="control">
+            <label for="vline">Line voltage V<sub>L-L</sub> (V)</label>
+            <input type="number" id="vline" step="1" value="460" />
+          </div>
+          <div class="control">
+            <label for="freq">Frequency f (Hz)</label>
+            <input type="number" id="freq" step="1" value="60" />
+          </div>
+          <div class="control">
+            <label for="poles">Number of poles p</label>
+            <input type="number" id="poles" step="1" value="4" />
+          </div>
+        </details>
+
+        <div class="control">
+          <label for="points">Resolution (number of slip points)</label>
+          <input type="number" id="points" step="50" min="200" max="4000" value="800" />
+        </div>
+
+        <div class="actions">
+          <button id="simulate">Simulate</button>
+          <button id="reset" class="secondary">Reset to defaults</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="summary">
+      <h2>Key Results</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>Peak (Breakdown) Torque</h3>
+          <p><span id="tmax">–</span> N·m at slip <span id="s_tmax">–</span></p>
+        </div>
+        <div class="card">
+          <h3>Starting Current (s=1)</h3>
+          <p><span id="istart">–</span> A (line)</p>
+        </div>
+        <div class="card">
+          <h3>No-load Current (s→0)</h3>
+          <p><span id="inl">–</span> A (line)</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="plots">
+      <div class="plot">
+        <div id="torquePlot"></div>
+      </div>
+      <div class="plot">
+        <div id="currentPlot"></div>
+      </div>
+    </section>
+
+    <section class="notes">
+      <h2>Model Notes</h2>
+      <ul>
+        <li>Per-phase approximate equivalent circuit with magnetizing branch <code>X<sub>m</sub></code> in parallel with rotor branch (<code>R<sub>2</sub>/s + jX<sub>2</sub></code>).</li>
+        <li>Total impedance: <code>Z = (R<sub>1</sub> + jX<sub>1</sub>) + big[(jX<sub>m</sub>) parallel (R<sub>2</sub>/s + jX<sub>2</sub>)big]</code>.</li>
+        <li>Line current magnitude computed from <code>I = V_phase / |Z|</code> with <code>V_phase = V_{L-L}/sqrt{3}</code> for Y connection.</li>
+        <li>Air-gap power <code>P_ag = 3,|I_2|^2,(R<sub>2</sub>/s)</code>, torque <code>T = P_ag / omega_{sync}</code>, with synchronous speed <code>omega_{sync} = 4pi f / p</code>.</li>
+        <li>Mechanical losses are neglected; results illustrate trends rather than exact nameplate values.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>Built for interactive teaching &mdash; adjust parameters and observe how rotor design shifts torque-speed curve and current draw.</p>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

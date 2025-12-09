@@ -29,7 +29,9 @@ function getParams() {
   const f = parseFloat(document.getElementById('freq').value);
   const p = parseInt(document.getElementById('poles').value);
   const points = parseInt(document.getElementById('points').value);
-  return { R2, X2, R1, X1, Xm, Vll, f, p, points };
+  const speed_noload = parseFloat(document.getElementById('speed_noload').value);
+  const speed_fullload = parseFloat(document.getElementById('speed_fullload').value);
+  return { R2, X2, R1, X1, Xm, Vll, f, p, points, speed_noload, speed_fullload };
 }
 
 function computeCurves(params) {
@@ -81,9 +83,77 @@ function computeCurves(params) {
   return { slips, speeds_rpm, torque, I_line, n_sync_rpm, Tmax, s_at_Tmax, istart, inoload };
 }
 
+function getTorqueAtSpeed(speed, curves) {
+  // Linear interpolation to find torque at given speed
+  const { speeds_rpm, torque } = curves;
+  
+  // Clamp speed to valid range
+  const minSpeed = Math.min(...speeds_rpm);
+  const maxSpeed = Math.max(...speeds_rpm);
+  if (speed < minSpeed || speed > maxSpeed) {
+    return null;
+  }
+  
+  // Find surrounding indices
+  let idx = 0;
+  for (let i = 0; i < speeds_rpm.length - 1; i++) {
+    if ((speeds_rpm[i] <= speed && speed <= speeds_rpm[i + 1]) ||
+        (speeds_rpm[i] >= speed && speed >= speeds_rpm[i + 1])) {
+      idx = i;
+      break;
+    }
+  }
+  
+  const s1 = speeds_rpm[idx];
+  const s2 = speeds_rpm[idx + 1];
+  const t1 = torque[idx];
+  const t2 = torque[idx + 1];
+  
+  // Linear interpolation
+  const t = t1 + (t2 - t1) * (speed - s1) / (s2 - s1);
+  return t;
+}
+
+function getCurrentAtSpeed(speed, curves, n_sync_rpm) {
+  // Convert speed to slip, then find current at that slip
+  const slip = 1 - (speed / n_sync_rpm);
+  const { slips, I_line } = curves;
+  
+  // Clamp slip to valid range
+  const minSlip = Math.min(...slips);
+  const maxSlip = Math.max(...slips);
+  if (slip < minSlip || slip > maxSlip) {
+    return null;
+  }
+  
+  // Find surrounding indices
+  let idx = 0;
+  for (let i = 0; i < slips.length - 1; i++) {
+    if ((slips[i] <= slip && slip <= slips[i + 1]) ||
+        (slips[i] >= slip && slip >= slips[i + 1])) {
+      idx = i;
+      break;
+    }
+  }
+  
+  const s1 = slips[idx];
+  const s2 = slips[idx + 1];
+  const i1 = I_line[idx];
+  const i2 = I_line[idx + 1];
+  
+  // Linear interpolation
+  const current = i1 + (i2 - i1) * (slip - s1) / (s2 - s1);
+  return current;
+}
+
 function plotResults(curves, params) {
   const { speeds_rpm, torque, I_line, slips, n_sync_rpm } = curves;
-  const { R2, X2 } = params;
+  const { R2, X2, speed_noload, speed_fullload } = params;
+  
+  // Calculate torque at marked speed points
+  const T_noload = getTorqueAtSpeed(speed_noload, curves);
+  const T_fullload = getTorqueAtSpeed(speed_fullload, curves);
+  
   // Torque vs speed
   const torqueTrace = {
     x: speeds_rpm,
@@ -93,6 +163,34 @@ function plotResults(curves, params) {
     line: { color: '#38bdf8', width: 3 },
     name: `Torque (R2=${R2.toFixed(2)}Ω, X2=${X2.toFixed(2)}Ω)`
   };
+  
+  // Traces array - add markers only if they're valid
+  const traces = [torqueTrace];
+  
+  if (T_noload !== null) {
+    const noloadMarker = {
+      x: [speed_noload],
+      y: [T_noload],
+      type: 'scatter',
+      mode: 'markers',
+      marker: { color: '#f59e0b', size: 10 },
+      name: `No-load (${speed_noload.toFixed(0)} rpm)`
+    };
+    traces.push(noloadMarker);
+  }
+  
+  if (T_fullload !== null) {
+    const fullloadMarker = {
+      x: [speed_fullload],
+      y: [T_fullload],
+      type: 'scatter',
+      mode: 'markers',
+      marker: { color: '#ef44e4ff', size: 10 },
+      name: `Full-load (${speed_fullload.toFixed(0)} rpm)`
+    };
+    traces.push(fullloadMarker);
+  }
+  
   const layoutTorque = {
     title: 'Torque vs Speed',
     xaxis: { title: 'Speed (rpm)', range: [0, n_sync_rpm], gridcolor: '#334155' },
@@ -102,7 +200,7 @@ function plotResults(curves, params) {
     font: { color: '#e2e8f0' },
     margin: { t: 40, r: 20, b: 60, l: 60 }
   };
-  Plotly.newPlot('torquePlot', [torqueTrace], layoutTorque, {displayModeBar: true});
+  Plotly.newPlot('torquePlot', traces, layoutTorque, {displayModeBar: true});
 
   // Current vs slip (or speed)
   const currentTrace = {
@@ -113,16 +211,51 @@ function plotResults(curves, params) {
     line: { color: '#22c55e', width: 3 },
     name: 'Line current'
   };
+  
+  // Calculate current at marked speed points
+  const I_noload = getCurrentAtSpeed(speed_noload, curves, n_sync_rpm);
+  const s_noload = 1 - (speed_noload / n_sync_rpm);
+  
+  const I_fullload = getCurrentAtSpeed(speed_fullload, curves, n_sync_rpm);
+  const s_fullload = 1 - (speed_fullload / n_sync_rpm);
+  
+  // Traces for current plot
+  const currentTraces = [currentTrace];
+  
+  if (I_noload !== null) {
+    const noloadCurrentMarker = {
+      x: [s_noload],
+      y: [I_noload],
+      type: 'scatter',
+      mode: 'markers',
+      marker: { color: '#f59e0b', size: 10 },
+      name: `No-load (${speed_noload.toFixed(0)} rpm)`
+    };
+    currentTraces.push(noloadCurrentMarker);
+  }
+  
+  if (I_fullload !== null) {
+    const fullloadCurrentMarker = {
+      x: [s_fullload],
+      y: [I_fullload],
+      type: 'scatter',
+      mode: 'markers',
+      marker: { color: '#ef44e4ff', size: 10 },
+      name: `Full-load (${speed_fullload.toFixed(0)} rpm)`
+    };
+    currentTraces.push(fullloadCurrentMarker);
+  }
+  
   const layoutCurrent = {
     title: 'Stator Line Current vs Slip',
-    xaxis: { title: 'Slip s', range: [0, 1], gridcolor: '#334155' },
+    xaxis: { title: 'Slip s', range: [1, 0], gridcolor: '#334155' },
     yaxis: { title: 'Current (A)', gridcolor: '#334155' },
     paper_bgcolor: '#1e293b',
     plot_bgcolor: '#0f172a',
     font: { color: '#e2e8f0' },
     margin: { t: 40, r: 20, b: 60, l: 60 }
   };
-  Plotly.newPlot('currentPlot', [currentTrace], layoutCurrent, {displayModeBar: true});
+  Plotly.newPlot('currentPlot', currentTraces, layoutCurrent, {displayModeBar: true});
 }
 
 function updateSummary(curves) {
@@ -150,7 +283,19 @@ function resetDefaults() {
   document.getElementById('freq').value = 60;
   document.getElementById('poles').value = 4;
   document.getElementById('points').value = 800;
+  updateSpeedDefaults();
   updateSliderLabels();
+}
+
+function updateSpeedDefaults() {
+  // Calculate sync speed from frequency and poles
+  const f = parseFloat(document.getElementById('freq').value);
+  const p = parseInt(document.getElementById('poles').value);
+  const n_sync = 120 * f / p;
+  
+  // Set defaults: no-load at 98% sync, full-load at 90% sync
+  document.getElementById('speed_noload').value = Math.round(n_sync * 0.98);
+  document.getElementById('speed_fullload').value = Math.round(n_sync * 0.95);
 }
 
 function updateSliderLabels() {
@@ -161,9 +306,12 @@ function updateSliderLabels() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  updateSpeedDefaults();
   updateSliderLabels();
   document.getElementById('r2').addEventListener('input', updateSliderLabels);
   document.getElementById('x2').addEventListener('input', updateSliderLabels);
+  document.getElementById('freq').addEventListener('change', updateSpeedDefaults);
+  document.getElementById('poles').addEventListener('change', updateSpeedDefaults);
   document.getElementById('simulate').addEventListener('click', simulate);
   document.getElementById('reset').addEventListener('click', () => { resetDefaults(); simulate(); });
   // Initial run

@@ -308,10 +308,32 @@ function updateSliderLabels() {
 window.addEventListener('DOMContentLoaded', () => {
   updateSpeedDefaults();
   updateSliderLabels();
-  document.getElementById('r2').addEventListener('input', updateSliderLabels);
-  document.getElementById('x2').addEventListener('input', updateSliderLabels);
-  document.getElementById('freq').addEventListener('change', updateSpeedDefaults);
-  document.getElementById('poles').addEventListener('change', updateSpeedDefaults);
+  
+  // Auto-update chart on slider/input changes
+  document.getElementById('r2').addEventListener('input', () => {
+    updateSliderLabels();
+    simulate();
+  });
+  document.getElementById('x2').addEventListener('input', () => {
+    updateSliderLabels();
+    simulate();
+  });
+  document.getElementById('freq').addEventListener('input', () => {
+    updateSpeedDefaults();
+    simulate();
+  });
+  document.getElementById('poles').addEventListener('input', () => {
+    updateSpeedDefaults();
+    simulate();
+  });
+  document.getElementById('r1').addEventListener('input', simulate);
+  document.getElementById('x1').addEventListener('input', simulate);
+  document.getElementById('xm').addEventListener('input', simulate);
+  document.getElementById('vline').addEventListener('input', simulate);
+  document.getElementById('points').addEventListener('input', simulate);
+  document.getElementById('speed_noload').addEventListener('input', simulate);
+  document.getElementById('speed_fullload').addEventListener('input', simulate);
+  
   document.getElementById('simulate').addEventListener('click', simulate);
   document.getElementById('reset').addEventListener('click', () => { resetDefaults(); simulate(); });
   // Initial run

@@ -258,19 +258,26 @@ function plotResults(curves, params) {
   Plotly.newPlot('currentPlot', currentTraces, layoutCurrent, {displayModeBar: true});
 }
 
-function updateSummary(curves) {
+function updateSummary(curves, params) {
   const { Tmax, s_at_Tmax, istart, inoload } = curves;
+  const { speed_fullload } = params;
+  const n_sync_rpm = curves.n_sync_rpm;
+  
+  // Calculate current at loaded speed
+  const I_fullload = getCurrentAtSpeed(speed_fullload, curves, n_sync_rpm);
+  
   document.getElementById('tmax').textContent = toFixedSig(Tmax, 2);
   document.getElementById('s_tmax').textContent = toFixedSig(s_at_Tmax, 4);
   document.getElementById('istart').textContent = toFixedSig(istart, 1);
   document.getElementById('inl').textContent = toFixedSig(inoload, 1);
+  document.getElementById('iloaded').textContent = I_fullload !== null ? toFixedSig(I_fullload, 1) : '–';
 }
 
 function simulate() {
   const params = getParams();
   const curves = computeCurves(params);
   plotResults(curves, params);
-  updateSummary(curves);
+  updateSummary(curves, params);
 }
 
 function resetDefaults() {

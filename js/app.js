@@ -293,9 +293,9 @@ function updateSpeedDefaults() {
   const p = parseInt(document.getElementById('poles').value);
   const n_sync = 120 * f / p;
   
-  // Set defaults: no-load at 98% sync, full-load at 90% sync
-  document.getElementById('speed_noload').value = Math.round(n_sync * 0.98);
-  document.getElementById('speed_fullload').value = Math.round(n_sync * 0.95);
+  // Set defaults: no-load at 99% sync, full-load at 95% sync
+  document.getElementById('speed_noload').value = Math.round(n_sync * 0.99);
+  document.getElementById('speed_fullload').value = Math.round(n_sync * 0.98);
 }
 
 function updateSliderLabels() {

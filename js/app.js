@@ -199,6 +199,12 @@ function getCurrentAtSpeed(speed, curves, n_sync_rpm) {
 
 function plotResults(curves, params) {
   const { speeds_rpm, torque, I_line, slips, n_sync_rpm } = curves;
+  const style = getComputedStyle(document.documentElement);
+  const accent = (style.getPropertyValue('--accent') || '#b31b1b').trim();
+  const accent2 = (style.getPropertyValue('--accent-2') || '#ef4444').trim();
+  const textColor = (style.getPropertyValue('--text') || '#0f172a').trim();
+  const gridColor = (style.getPropertyValue('--card-border') || '#e6e9ef').trim();
+  const bgColor = (style.getPropertyValue('--card') || '#ffffff').trim();
   const { R2, X2, speed_noload, speed_fullload } = params;
   
   // Calculate torque at marked speed points
@@ -211,7 +217,7 @@ function plotResults(curves, params) {
     y: torque,
     type: 'scatter',
     mode: 'lines',
-    line: { color: '#38bdf8', width: 3 },
+    line: { color: accent, width: 3 },
     name: `Torque (R2=${R2.toFixed(2)}Ω, X2=${X2.toFixed(2)}Ω)`
   };
   
@@ -224,7 +230,7 @@ function plotResults(curves, params) {
       y: [T_noload],
       type: 'scatter',
       mode: 'markers',
-      marker: { color: '#f59e0b', size: 10 },
+      marker: { color: accent2, size: 10 },
       name: `No-load Speed (${speed_noload.toFixed(0)} rpm)`
     };
     traces.push(noloadMarker);
@@ -236,7 +242,7 @@ function plotResults(curves, params) {
       y: [T_fullload],
       type: 'scatter',
       mode: 'markers',
-      marker: { color: '#ef44e4ff', size: 10 },
+      marker: { color: textColor, size: 10 },
       name: `Loaded Speed (${speed_fullload.toFixed(0)} rpm)`
     };
     traces.push(fullloadMarker);
@@ -244,11 +250,11 @@ function plotResults(curves, params) {
   
   const layoutTorque = {
     title: 'Torque vs Speed',
-    xaxis: { title: 'Speed (rpm)', range: [0, n_sync_rpm], gridcolor: '#334155' },
-    yaxis: { title: 'Torque (N·m)', gridcolor: '#334155' },
-    paper_bgcolor: '#1e293b',
-    plot_bgcolor: '#0f172a',
-    font: { color: '#e2e8f0' },
+    xaxis: { title: 'Speed (rpm)', range: [0, n_sync_rpm], gridcolor: gridColor, zerolinecolor: gridColor },
+    yaxis: { title: 'Torque (N·m)', gridcolor: gridColor, zerolinecolor: gridColor },
+    paper_bgcolor: bgColor,
+    plot_bgcolor: bgColor,
+    font: { color: textColor },
     margin: { t: 40, r: 20, b: 60, l: 60 }
   };
   // If full-load speed is below breakdown (peak) speed, show STALLED overlay
@@ -265,7 +271,7 @@ function plotResults(curves, params) {
     layoutTorque.annotations = [
       {
         xref: 'paper', yref: 'paper', x: 0.5, y: 0.5,
-        text: '<b style="font-size:24px; color:#ff6b6b">STALLED</b>',
+        text: `<b style="font-size:24px; color:${accent}">STALLED</b>`,
         showarrow: false,
         bgcolor: 'rgba(0,0,0,0.4)'
       }
@@ -279,7 +285,7 @@ function plotResults(curves, params) {
     y: I_line,
     type: 'scatter',
     mode: 'lines',
-    line: { color: '#22c55e', width: 3 },
+    line: { color: accent2, width: 3 },
     name: 'Line current'
   };
   
@@ -294,36 +300,36 @@ function plotResults(curves, params) {
   const currentTraces = [currentTrace];
   
   if (I_noload !== null) {
-    const noloadCurrentMarker = {
-      x: [s_noload],
-      y: [I_noload],
-      type: 'scatter',
-      mode: 'markers',
-      marker: { color: '#f59e0b', size: 10 },
-      name: `No-load (${speed_noload.toFixed(0)} rpm)`
-    };
+      const noloadCurrentMarker = {
+        x: [s_noload],
+        y: [I_noload],
+        type: 'scatter',
+        mode: 'markers',
+        marker: { color: accent, size: 10 },
+        name: `No-load (${speed_noload.toFixed(0)} rpm)`
+      };
     currentTraces.push(noloadCurrentMarker);
   }
   
   if (I_fullload !== null) {
-    const fullloadCurrentMarker = {
-      x: [s_fullload],
-      y: [I_fullload],
-      type: 'scatter',
-      mode: 'markers',
-      marker: { color: '#ef44e4ff', size: 10 },
-      name: `Loaded Speed (${speed_fullload.toFixed(0)} rpm)`
-    };
+      const fullloadCurrentMarker = {
+        x: [s_fullload],
+        y: [I_fullload],
+        type: 'scatter',
+        mode: 'markers',
+        marker: { color: textColor, size: 10 },
+        name: `Loaded Speed (${speed_fullload.toFixed(0)} rpm)`
+      };
     currentTraces.push(fullloadCurrentMarker);
   }
   
   const layoutCurrent = {
     title: 'Stator Line Current vs Slip',
-    xaxis: { title: 'Slip s', range: [1, 0], gridcolor: '#334155' },
-    yaxis: { title: 'Current (A)', gridcolor: '#334155' },
-    paper_bgcolor: '#1e293b',
-    plot_bgcolor: '#0f172a',
-    font: { color: '#e2e8f0' },
+    xaxis: { title: 'Slip s', range: [1, 0], gridcolor: gridColor, zerolinecolor: gridColor },
+    yaxis: { title: 'Current (A)', gridcolor: gridColor, zerolinecolor: gridColor },
+    paper_bgcolor: bgColor,
+    plot_bgcolor: bgColor,
+    font: { color: textColor },
     margin: { t: 40, r: 20, b: 60, l: 60 }
   };
   Plotly.newPlot('currentPlot', currentTraces, layoutCurrent, {displayModeBar: true});
@@ -430,6 +436,23 @@ function updateSliderLabels() {
   document.getElementById('x2_val').textContent = `${x2.toFixed(2)} Ω`;
 }
 
+function updateRangeFill(el) {
+  const min = parseFloat(el.min) || 0;
+  const max = parseFloat(el.max) || 100;
+  const val = parseFloat(el.value);
+  const pct = ((val - min) / (max - min)) * 100;
+  const style = getComputedStyle(document.documentElement);
+  const accent = (style.getPropertyValue('--accent') || '#b31b1b').trim();
+  const track = '#e5e7eb';
+  // Compose gradient using percentage
+  el.style.background = `linear-gradient(90deg, ${accent} 0%, ${accent} ${pct}%, ${track} ${pct}%, ${track} 100%)`;
+}
+
+function updateRangeFills() {
+  const ranges = document.querySelectorAll('input[type="range"]');
+  ranges.forEach(updateRangeFill);
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   updateSliderLabels();
 
@@ -444,10 +467,12 @@ window.addEventListener('DOMContentLoaded', () => {
   // Auto-update chart on slider/input changes
   document.getElementById('r2').addEventListener('input', () => {
     updateSliderLabels();
+    updateRangeFill(document.getElementById('r2'));
     simulate();
   });
   document.getElementById('x2').addEventListener('input', () => {
     updateSliderLabels();
+    updateRangeFill(document.getElementById('x2'));
     simulate();
   });
   document.getElementById('freq').addEventListener('input', simulate);
@@ -460,11 +485,11 @@ window.addEventListener('DOMContentLoaded', () => {
   // no direct user input for no-load speed anymore; it's auto-calculated
   const percentSlider = document.getElementById('percent_loaded');
   if (percentSlider) {
-    percentSlider.addEventListener('input', () => { updateSliderLabels(); simulate(); });
+    percentSlider.addEventListener('input', () => { updateSliderLabels(); updateRangeFill(percentSlider); simulate(); });
   }
   
   document.getElementById('simulate').addEventListener('click', simulate);
-  document.getElementById('reset').addEventListener('click', () => { resetDefaults(); simulate(); });
+  // Reset button removed; keep `resetDefaults` available for developers.
   // Plot toggle buttons (minimize/maximize)
   const toggleTorque = document.getElementById('toggle_torque');
   const toggleCurrent = document.getElementById('toggle_current');
@@ -494,5 +519,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
   // Initial run
+  // Ensure all range fills are initialized before first simulate
+  updateRangeFills();
   simulate();
 });

@@ -5,16 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Induction Motor Rotor Parameter Explorer</title>
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
   <!-- Plotly CDN -->
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Induction Motor Rotor Parameter Explorer</h1>
-    <p>Interactively explore how rotor resistance (<code>R<sub>2</sub></code>) and rotor reactance (<code>X<sub>2</sub></code>) affect torque and stator current across load (slip).</p>
+  <div class="topbar">
+    <a href="#" class="logo-link" aria-label="SAIT Home">
+      <img src="images/sait-logo.png" alt="SAIT logo" class="logo-img" />
+    </a>
+  </div>
+  <header class="site-header">
+    <div class="container">
+      <h1>Induction Motor Rotor Parameter Explorer</h1>
+      <p>Interactively explore how rotor resistance (<code>R<sub>2</sub></code>) and rotor reactance (<code>X<sub>2</sub></code>) affect torque and stator current across load (slip).</p>
+    </div>
   </header>
 
   <main>
+    <div class="container">
     <section class="controls">
       <h2>Motor Parameters</h2>
       <div class="grid">
@@ -49,7 +60,7 @@
             <span class="spacer"></span>
             <label for="speed_fullload_rpm" style="font-weight:normal">Loaded speed:</label>
             <output id="speed_fullload_rpm">–</output>
-            <span style="margin-left:6px; font-size:0.9em; color:#94a3b8">rpm</span>
+            <span class="muted" style="margin-left:6px; font-size:0.9em;">rpm</span>
           </div>
         </div>
         </div>
@@ -88,8 +99,6 @@
         </div>
         </details>
         <div class="actions">
-          <button id="simulate">Simulate</button>
-          <button id="reset" class="secondary">Reset to defaults</button>
         </div>
       </div>
     </section>
@@ -143,6 +152,7 @@
         <li>Mechanical losses are neglected; results illustrate trends rather than exact nameplate values.</li>
       </ul>
     </section>
+    </div>
   </main>
 
   <footer>

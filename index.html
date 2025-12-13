@@ -117,11 +117,19 @@
     </section>
 
     <section class="plots">
-      <div class="plot">
-        <div id="torquePlot"></div>
+      <div class="plot" id="plot_torque">
+        <div class="plot-header">
+          <span>Torque vs Speed</span>
+          <button class="toggle-plot" id="toggle_torque" aria-label="Toggle Torque Plot">–</button>
+        </div>
+        <div class="plot-content"><div id="torquePlot"></div></div>
       </div>
-      <div class="plot">
-        <div id="currentPlot"></div>
+      <div class="plot" id="plot_current">
+        <div class="plot-header">
+          <span>Stator Line Current vs Slip</span>
+          <button class="toggle-plot" id="toggle_current" aria-label="Toggle Current Plot">–</button>
+        </div>
+        <div class="plot-content"><div id="currentPlot"></div></div>
       </div>
     </section>
 

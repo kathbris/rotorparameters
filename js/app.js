@@ -465,6 +465,34 @@ window.addEventListener('DOMContentLoaded', () => {
   
   document.getElementById('simulate').addEventListener('click', simulate);
   document.getElementById('reset').addEventListener('click', () => { resetDefaults(); simulate(); });
+  // Plot toggle buttons (minimize/maximize)
+  const toggleTorque = document.getElementById('toggle_torque');
+  const toggleCurrent = document.getElementById('toggle_current');
+  if (toggleTorque) {
+    toggleTorque.addEventListener('click', () => {
+      const plotEl = document.getElementById('plot_torque');
+      if (!plotEl) return;
+      plotEl.classList.toggle('minimized');
+      const btn = toggleTorque;
+      btn.textContent = plotEl.classList.contains('minimized') ? '+' : '–';
+      if (!plotEl.classList.contains('minimized')) {
+        // Resizing plotly when restoring
+        try { Plotly.Plots.resize(document.getElementById('torquePlot')); } catch(e){}
+      }
+    });
+  }
+  if (toggleCurrent) {
+    toggleCurrent.addEventListener('click', () => {
+      const plotEl = document.getElementById('plot_current');
+      if (!plotEl) return;
+      plotEl.classList.toggle('minimized');
+      const btn = toggleCurrent;
+      btn.textContent = plotEl.classList.contains('minimized') ? '+' : '–';
+      if (!plotEl.classList.contains('minimized')) {
+        try { Plotly.Plots.resize(document.getElementById('currentPlot')); } catch(e){}
+      }
+    });
+  }
   // Initial run
   simulate();
 });

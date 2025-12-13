@@ -18,6 +18,35 @@ function toFixedSig(n, digits=3) {
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
+// NEMA rotor presets (R2, X2) chosen to illustrate typical torque-speed behavior
+const nemaPresets = {
+  'NEMA_A': { R2: 0.4, X2: 0.5 },
+  'NEMA_B': { R2: 0.3, X2: 0.5 },
+  'NEMA_C': { R2: 0.7, X2: 0.6 },
+  'NEMA_D': { R2: 1.2, X2: 0.8 },
+  'WOUND': { R2: 0.05, X2: 0.2 }
+};
+
+function applyNemaPreset(name) {
+  const preset = nemaPresets[name];
+  if (!preset) return;
+  const r2El = document.getElementById('r2');
+  const x2El = document.getElementById('x2');
+  r2El.value = preset.R2;
+  x2El.value = preset.X2;
+  // Show rotor sliders only for wound rotor preset
+  const rotorControls = Array.from(document.querySelectorAll('.rotor_control'));
+  if (rotorControls.length > 0) {
+    if (name === 'WOUND') {
+      rotorControls.forEach(el => { el.style.display = ''; const input = el.querySelector('input'); if (input) input.disabled = false; });
+    } else {
+      rotorControls.forEach(el => { el.style.display = 'none'; const input = el.querySelector('input'); if (input) input.disabled = true; });
+    }
+  }
+  updateSliderLabels();
+  simulate();
+}
+
 function getParams() {
   // Read inputs
   const R2 = parseFloat(document.getElementById('r2').value);
@@ -375,8 +404,12 @@ function simulate() {
 }
 
 function resetDefaults() {
-  document.getElementById('r2').value = 0.3;
-  document.getElementById('x2').value = 0.5;
+  // Default NEMA preset
+  const defaultPreset = 'NEMA_B';
+  const presetEl = document.querySelector(`input[name='nema_design'][value='${defaultPreset}']`);
+  if (presetEl) presetEl.checked = true;
+  applyNemaPreset(defaultPreset);
+
   document.getElementById('r1').value = 0.5;
   document.getElementById('x1').value = 1.5;
   document.getElementById('xm').value = 30;
@@ -384,89 +417,11 @@ function resetDefaults() {
   document.getElementById('freq').value = 60;
   document.getElementById('poles').value = 4;
   document.getElementById('points').value = 800;
-  updateSpeedDefaults();
+  document.getElementById('percent_loaded').value = 100;
   updateSliderLabels();
 }
 
-function updateSpeedDefaults() {
-  // Calculate sync speed from frequency and poles
-  const f = parseFloat(document.getElementById('freq').value);
-  const p = parseInt(document.getElementById('poles').value);
-  const n_sync = 120 * f / p;
-  
-  // Compute and display default no-load near synchronous speed (0.5% Tmax)
-  try {
-    const nlTargetParams = {
-      R2: parseFloat(document.getElementById('r2').value),
-      X2: parseFloat(document.getElementById('x2').value),
-      R1: parseFloat(document.getElementById('r1').value),
-      X1: parseFloat(document.getElementById('x1').value),
-      Xm: parseFloat(document.getElementById('xm').value),
-      Vll: parseFloat(document.getElementById('vline').value),
-      f: f,
-      p: p,
-      points: parseInt(document.getElementById('points').value)
-    };
-    const curvesForNL = computeCurves(nlTargetParams);
-    const noLoadTarget = 0.05 * curvesForNL.Tmax; // 0.5% of Tmax
-    const speedAtNL = getSpeedAtTorque(noLoadTarget, curvesForNL);
-    const nlOut = document.getElementById('speed_noload_rpm');
-    if (speedAtNL !== null) {
-      if (nlOut) nlOut.textContent = Math.round(speedAtNL);
-    } else {
-      if (nlOut) nlOut.textContent = Math.round(n_sync * 0.995);
-    }
-  } catch (e) {
-    const nlOut = document.getElementById('speed_noload_rpm');
-    if (nlOut) nlOut.textContent = Math.round(n_sync * 0.995);
-  }
-
-  // Compute the torque curve to determine the reference (33% of Tmax)
-  try {
-    const paramsForCurves = {
-      R2: parseFloat(document.getElementById('r2').value),
-      X2: parseFloat(document.getElementById('x2').value),
-      R1: parseFloat(document.getElementById('r1').value),
-      X1: parseFloat(document.getElementById('x1').value),
-      Xm: parseFloat(document.getElementById('xm').value),
-      Vll: parseFloat(document.getElementById('vline').value),
-      f: f,
-      p: p,
-      points: parseInt(document.getElementById('points').value),
-      percent_loaded: 100
-    };
-
-    const curves = computeCurves(paramsForCurves);
-    // Default percent is 100 -> reference targetTorque = 33% * Tmax
-    const refTorque = 0.33 * curves.Tmax;
-    const speedAtRef = getSpeedAtTorque(refTorque, curves);
-    if (speedAtRef !== null) {
-      // Set slider to 100 and display rpm
-      const slider = document.getElementById('percent_loaded');
-      if (slider) slider.value = 100;
-      const pctEl = document.getElementById('percent_loaded_val');
-      if (pctEl) pctEl.textContent = '100%';
-      const rpmOut = document.getElementById('speed_fullload_rpm');
-      if (rpmOut) rpmOut.textContent = Math.round(speedAtRef);
-    } else {
-      // fallback
-      const slider = document.getElementById('percent_loaded');
-      if (slider) slider.value = 100;
-      const pctEl = document.getElementById('percent_loaded_val');
-      if (pctEl) pctEl.textContent = '100%';
-      const rpmOut = document.getElementById('speed_fullload_rpm');
-      if (rpmOut) rpmOut.textContent = Math.round(nlOut * 0.98);
-    }
-  } catch (e) {
-    // fallback defaults
-    const slider = document.getElementById('percent_loaded');
-    if (slider) slider.value = 100;
-    const pctEl = document.getElementById('percent_loaded_val');
-    if (pctEl) pctEl.textContent = '100%';
-    const rpmOut = document.getElementById('speed_fullload_rpm');
-    if (rpmOut) rpmOut.textContent = Math.round(nlOut * 0.98);
-  }
-}
+// Removed obsolete updateSpeedDefaults() helper to avoid stale defaults
 
 function updateSliderLabels() {
   const r2 = parseFloat(document.getElementById('r2').value);
@@ -476,9 +431,16 @@ function updateSliderLabels() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  updateSpeedDefaults();
   updateSliderLabels();
-  
+
+  // Apply currently selected NEMA preset (will show/hide rotor controls)
+  const selectedPreset = document.querySelector('input[name="nema_design"]:checked');
+  if (selectedPreset) applyNemaPreset(selectedPreset.value);
+  // Wire up NEMA preset radio change
+  document.querySelectorAll('input[name="nema_design"]').forEach(r => r.addEventListener('change', (e) => {
+    applyNemaPreset(e.target.value);
+  }));
+
   // Auto-update chart on slider/input changes
   document.getElementById('r2').addEventListener('input', () => {
     updateSliderLabels();
@@ -488,14 +450,8 @@ window.addEventListener('DOMContentLoaded', () => {
     updateSliderLabels();
     simulate();
   });
-  document.getElementById('freq').addEventListener('input', () => {
-    updateSpeedDefaults();
-    simulate();
-  });
-  document.getElementById('poles').addEventListener('input', () => {
-    updateSpeedDefaults();
-    simulate();
-  });
+  document.getElementById('freq').addEventListener('input', simulate);
+  document.getElementById('poles').addEventListener('input', simulate);
   document.getElementById('r1').addEventListener('input', simulate);
   document.getElementById('x1').addEventListener('input', simulate);
   document.getElementById('xm').addEventListener('input', simulate);
@@ -504,7 +460,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // no direct user input for no-load speed anymore; it's auto-calculated
   const percentSlider = document.getElementById('percent_loaded');
   if (percentSlider) {
-    percentSlider.addEventListener('input', () => { simulate(); });
+    percentSlider.addEventListener('input', () => { updateSliderLabels(); simulate(); });
   }
   
   document.getElementById('simulate').addEventListener('click', simulate);

@@ -29,9 +29,9 @@ function getParams() {
   const f = parseFloat(document.getElementById('freq').value);
   const p = parseInt(document.getElementById('poles').value);
   const points = parseInt(document.getElementById('points').value);
-  const speed_noload = parseFloat(document.getElementById('speed_noload').value);
-  const speed_fullload = parseFloat(document.getElementById('speed_fullload').value);
-  return { R2, X2, R1, X1, Xm, Vll, f, p, points, speed_noload, speed_fullload };
+  // percent slider: 0..150 (0% = no-load, 100% = reference at 33% of Tmax)
+  const percent_loaded = parseFloat(document.getElementById('percent_loaded').value);
+  return { R2, X2, R1, X1, Xm, Vll, f, p, points, percent_loaded };
 }
 
 function computeCurves(params) {
@@ -114,6 +114,28 @@ function getTorqueAtSpeed(speed, curves) {
   return t;
 }
 
+// Find speed (rpm) at which torque crosses targetTorque using linear
+// interpolation on the computed torque curve. Returns null if not found.
+function getSpeedAtTorque(targetTorque, curves) {
+  const { speeds_rpm, torque } = curves;
+  // Find an interval where torque crosses targetTorque
+  for (let i = 0; i < torque.length - 1; i++) {
+    const t1 = torque[i];
+    const t2 = torque[i + 1];
+    // Check if target is between t1 and t2 (either increasing or decreasing)
+    if ((t1 <= targetTorque && targetTorque <= t2) || (t1 >= targetTorque && targetTorque >= t2)) {
+      const s1 = speeds_rpm[i];
+      const s2 = speeds_rpm[i + 1];
+      // Avoid division by zero
+      if (t2 === t1) return (s1 + s2) / 2;
+      const frac = (targetTorque - t1) / (t2 - t1);
+      const speed = s1 + (s2 - s1) * frac;
+      return speed;
+    }
+  }
+  return null;
+}
+
 function getCurrentAtSpeed(speed, curves, n_sync_rpm) {
   // Convert speed to slip, then find current at that slip
   const slip = 1 - (speed / n_sync_rpm);
@@ -174,7 +196,7 @@ function plotResults(curves, params) {
       type: 'scatter',
       mode: 'markers',
       marker: { color: '#f59e0b', size: 10 },
-      name: `No-load (${speed_noload.toFixed(0)} rpm)`
+      name: `No-load Speed (${speed_noload.toFixed(0)} rpm)`
     };
     traces.push(noloadMarker);
   }
@@ -186,7 +208,7 @@ function plotResults(curves, params) {
       type: 'scatter',
       mode: 'markers',
       marker: { color: '#ef44e4ff', size: 10 },
-      name: `Full-load (${speed_fullload.toFixed(0)} rpm)`
+      name: `Loaded Speed (${speed_fullload.toFixed(0)} rpm)`
     };
     traces.push(fullloadMarker);
   }
@@ -200,6 +222,26 @@ function plotResults(curves, params) {
     font: { color: '#e2e8f0' },
     margin: { t: 40, r: 20, b: 60, l: 60 }
   };
+  // If full-load speed is below breakdown (peak) speed, show STALLED overlay
+  const speed_at_Tmax = n_sync_rpm * (1 - curves.s_at_Tmax);
+  if (!isNaN(speed_at_Tmax) && isFinite(speed_fullload) && speed_fullload < speed_at_Tmax) {
+    // Add a translucent overlay and a prominent annotation
+    layoutTorque.shapes = [
+      {
+        type: 'rect', xref: 'paper', yref: 'paper',
+        x0: 0, x1: 1, y0: 0, y1: 1,
+        fillcolor: 'rgba(255,0,0,0.06)', line: {width: 0}
+      }
+    ];
+    layoutTorque.annotations = [
+      {
+        xref: 'paper', yref: 'paper', x: 0.5, y: 0.5,
+        text: '<b style="font-size:24px; color:#ff6b6b">STALLED</b>',
+        showarrow: false,
+        bgcolor: 'rgba(0,0,0,0.4)'
+      }
+    ];
+  }
   Plotly.newPlot('torquePlot', traces, layoutTorque, {displayModeBar: true});
 
   // Current vs slip (or speed)
@@ -241,7 +283,7 @@ function plotResults(curves, params) {
       type: 'scatter',
       mode: 'markers',
       marker: { color: '#ef44e4ff', size: 10 },
-      name: `Full-load (${speed_fullload.toFixed(0)} rpm)`
+      name: `Loaded Speed (${speed_fullload.toFixed(0)} rpm)`
     };
     currentTraces.push(fullloadCurrentMarker);
   }
@@ -274,8 +316,60 @@ function updateSummary(curves, params) {
 }
 
 function simulate() {
-  const params = getParams();
-  const curves = computeCurves(params);
+  // Get params (includes percent_loaded and speed_noload)
+  const paramsPartial = getParams();
+  // First compute torque curve to determine Tmax and reference speed
+  const curves = computeCurves(paramsPartial);
+
+  // Determine loaded speed from percent slider
+  const percent = paramsPartial.percent_loaded;
+  let speed_fullload = NaN;
+  // Reference torque is 33% of Tmax
+  const refTorque = 0.33 * curves.Tmax;
+
+  // Compute auto no-load speed: speed where torque = 0.5% of Tmax
+  const noLoadTarget = 0.05 * curves.Tmax; // 0.5% of peak torque
+  let speed_noload = getSpeedAtTorque(noLoadTarget, curves);
+  if (speed_noload === null || !isFinite(speed_noload)) {
+    // fallback to ~99.5% sync
+    speed_noload = Math.round(curves.n_sync_rpm * 0.995);
+  }
+
+  if (percent === 0) {
+    // At 0% -> no-load speed
+    speed_fullload = speed_noload;
+  } else {
+    const targetTorque = (percent / 100) * refTorque;
+    // If targetTorque is effectively zero (tiny Tmax), fallback to heuristic
+    if (targetTorque <= 0) {
+      speed_fullload = Math.round(curves.n_sync_rpm * 0.98);
+    } else {
+      const s = getSpeedAtTorque(targetTorque, curves);
+      if (s !== null) {
+        speed_fullload = s;
+      } else {
+        // fallback: keep near synchronous speed (safe)
+        speed_fullload = Math.round(curves.n_sync_rpm * 0.98);
+      }
+    }
+  }
+
+  // Ensure loaded speed never exceeds no-load speed
+  if (isFinite(speed_noload) && isFinite(speed_fullload)) {
+    speed_fullload = Math.min(speed_fullload, speed_noload);
+  }
+
+  // Prepare final params for plotting/summary (include computed speed_noload)
+  const params = Object.assign({}, paramsPartial, { speed_fullload, speed_noload });
+
+  // Update UI displays: percent label and rpm outputs
+  const pctEl = document.getElementById('percent_loaded_val');
+  if (pctEl) pctEl.textContent = `${Math.round(paramsPartial.percent_loaded)}%`;
+  const rpmOut = document.getElementById('speed_fullload_rpm');
+  if (rpmOut) rpmOut.textContent = Math.round(speed_fullload);
+  const nlOut = document.getElementById('speed_noload_rpm');
+  if (nlOut) nlOut.textContent = Math.round(params.speed_noload);
+
   plotResults(curves, params);
   updateSummary(curves, params);
 }
@@ -300,9 +394,78 @@ function updateSpeedDefaults() {
   const p = parseInt(document.getElementById('poles').value);
   const n_sync = 120 * f / p;
   
-  // Set defaults: no-load at 99% sync, full-load at 95% sync
-  document.getElementById('speed_noload').value = Math.round(n_sync * 0.995);
-  document.getElementById('speed_fullload').value = Math.round(n_sync * 0.98);
+  // Compute and display default no-load near synchronous speed (0.5% Tmax)
+  try {
+    const nlTargetParams = {
+      R2: parseFloat(document.getElementById('r2').value),
+      X2: parseFloat(document.getElementById('x2').value),
+      R1: parseFloat(document.getElementById('r1').value),
+      X1: parseFloat(document.getElementById('x1').value),
+      Xm: parseFloat(document.getElementById('xm').value),
+      Vll: parseFloat(document.getElementById('vline').value),
+      f: f,
+      p: p,
+      points: parseInt(document.getElementById('points').value)
+    };
+    const curvesForNL = computeCurves(nlTargetParams);
+    const noLoadTarget = 0.05 * curvesForNL.Tmax; // 0.5% of Tmax
+    const speedAtNL = getSpeedAtTorque(noLoadTarget, curvesForNL);
+    const nlOut = document.getElementById('speed_noload_rpm');
+    if (speedAtNL !== null) {
+      if (nlOut) nlOut.textContent = Math.round(speedAtNL);
+    } else {
+      if (nlOut) nlOut.textContent = Math.round(n_sync * 0.995);
+    }
+  } catch (e) {
+    const nlOut = document.getElementById('speed_noload_rpm');
+    if (nlOut) nlOut.textContent = Math.round(n_sync * 0.995);
+  }
+
+  // Compute the torque curve to determine the reference (33% of Tmax)
+  try {
+    const paramsForCurves = {
+      R2: parseFloat(document.getElementById('r2').value),
+      X2: parseFloat(document.getElementById('x2').value),
+      R1: parseFloat(document.getElementById('r1').value),
+      X1: parseFloat(document.getElementById('x1').value),
+      Xm: parseFloat(document.getElementById('xm').value),
+      Vll: parseFloat(document.getElementById('vline').value),
+      f: f,
+      p: p,
+      points: parseInt(document.getElementById('points').value),
+      percent_loaded: 100
+    };
+
+    const curves = computeCurves(paramsForCurves);
+    // Default percent is 100 -> reference targetTorque = 33% * Tmax
+    const refTorque = 0.33 * curves.Tmax;
+    const speedAtRef = getSpeedAtTorque(refTorque, curves);
+    if (speedAtRef !== null) {
+      // Set slider to 100 and display rpm
+      const slider = document.getElementById('percent_loaded');
+      if (slider) slider.value = 100;
+      const pctEl = document.getElementById('percent_loaded_val');
+      if (pctEl) pctEl.textContent = '100%';
+      const rpmOut = document.getElementById('speed_fullload_rpm');
+      if (rpmOut) rpmOut.textContent = Math.round(speedAtRef);
+    } else {
+      // fallback
+      const slider = document.getElementById('percent_loaded');
+      if (slider) slider.value = 100;
+      const pctEl = document.getElementById('percent_loaded_val');
+      if (pctEl) pctEl.textContent = '100%';
+      const rpmOut = document.getElementById('speed_fullload_rpm');
+      if (rpmOut) rpmOut.textContent = Math.round(nlOut * 0.98);
+    }
+  } catch (e) {
+    // fallback defaults
+    const slider = document.getElementById('percent_loaded');
+    if (slider) slider.value = 100;
+    const pctEl = document.getElementById('percent_loaded_val');
+    if (pctEl) pctEl.textContent = '100%';
+    const rpmOut = document.getElementById('speed_fullload_rpm');
+    if (rpmOut) rpmOut.textContent = Math.round(nlOut * 0.98);
+  }
 }
 
 function updateSliderLabels() {
@@ -338,8 +501,11 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('xm').addEventListener('input', simulate);
   document.getElementById('vline').addEventListener('input', simulate);
   document.getElementById('points').addEventListener('input', simulate);
-  document.getElementById('speed_noload').addEventListener('input', simulate);
-  document.getElementById('speed_fullload').addEventListener('input', simulate);
+  // no direct user input for no-load speed anymore; it's auto-calculated
+  const percentSlider = document.getElementById('percent_loaded');
+  if (percentSlider) {
+    percentSlider.addEventListener('input', () => { simulate(); });
+  }
   
   document.getElementById('simulate').addEventListener('click', simulate);
   document.getElementById('reset').addEventListener('click', () => { resetDefaults(); simulate(); });

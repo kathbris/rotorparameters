@@ -434,6 +434,8 @@ function updateSliderLabels() {
   const x2 = parseFloat(document.getElementById('x2').value);
   document.getElementById('r2_val').textContent = `${r2.toFixed(2)} Ω`;
   document.getElementById('x2_val').textContent = `${x2.toFixed(2)} Ω`;
+  // Keep slider background/fill synced whenever labels change programmatically
+  updateRangeFills();
 }
 
 function updateRangeFill(el) {

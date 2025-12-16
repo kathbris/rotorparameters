@@ -56,20 +56,23 @@ function applyNemaPreset(name) {
   simulate();
 }
 
+// Assumed system/stator constants to better match typical motor behavior
+const ASSUMED = {
+  R1: 0.50,   // stator resistance (Ω)
+  X1: 1.10,   // stator reactance (Ω)
+  Xm: 25.0,   // magnetizing reactance (Ω)
+  Vll: 460,   // line voltage (V)
+  f: 60,      // frequency (Hz)
+  p: 4,       // poles
+  points: 2000
+};
+
 function getParams() {
-  // Read inputs
+  // Read user-facing Rotor inputs but use assumed constants for stator/system
   const R2 = parseFloat(document.getElementById('r2').value);
   const X2 = parseFloat(document.getElementById('x2').value);
-  const R1 = parseFloat(document.getElementById('r1').value);
-  const X1 = parseFloat(document.getElementById('x1').value);
-  const Xm = parseFloat(document.getElementById('xm').value);
-  const Vll = parseFloat(document.getElementById('vline').value);
-  const f = parseFloat(document.getElementById('freq').value);
-  const p = parseInt(document.getElementById('poles').value);
-  const points = parseInt(document.getElementById('points').value);
-  // percent slider: 0..150 (0% = no-load, 100% = reference at 33% of Tmax)
   const percent_loaded = parseFloat(document.getElementById('percent_loaded').value);
-  return { R2, X2, R1, X1, Xm, Vll, f, p, points, percent_loaded };
+  return { R2, X2, R1: ASSUMED.R1, X1: ASSUMED.X1, Xm: ASSUMED.Xm, Vll: ASSUMED.Vll, f: ASSUMED.f, p: ASSUMED.p, points: ASSUMED.points, percent_loaded };
 }
 
 function computeCurves(params) {
@@ -229,6 +232,45 @@ function getInputAtSpeed(speed, curves) {
   return p1 + (p2 - p1) * (slip - s1) / (s2 - s1);
 }
 
+function computeThevenin(params) {
+  // Compute Thevenin equivalent seen by the rotor (open-circuit rotor)
+  const { R1, X1, Xm, Vll, f, p } = params;
+  const Vph = Vll / Math.sqrt(3);
+  const Zs = c(R1, X1);
+  const Zm = c(0, Xm);
+  // Thevenin impedance is Zth = Zs || Zm
+  const Zth = cPar(Zs, Zm);
+  // Thevenin voltage Vth = Vph * Zm / (Zs + Zm)
+  const Vth = cMul(c(Vph, 0), cDiv(Zm, cAdd(Zs, Zm)));
+  const w_sync = 4 * Math.PI * f / p;
+  return { Zth, Vth, w_sync };
+}
+
+function theveninTorqueTrace(curves, params, R2_override, X2_override, label, styleOpts = {}) {
+  const { slips, speeds_rpm } = curves;
+  const { Zth, Vth, w_sync } = computeThevenin(params);
+  const Rth = Zth.re;
+  const Xth = Zth.im;
+  const Vth_mag = cMag(Vth);
+  const R2 = (typeof R2_override === 'number') ? R2_override : params.R2;
+  const X2 = (typeof X2_override === 'number') ? X2_override : params.X2;
+
+  const T_th = slips.map(s => {
+    const r2_over_s = R2 / s;
+    const denom = (Rth + r2_over_s) * (Rth + r2_over_s) + (Xth + X2) * (Xth + X2);
+    return (3 * (Vth_mag * Vth_mag) * r2_over_s) / (w_sync * denom);
+  });
+
+  return Object.assign({
+    x: speeds_rpm,
+    y: T_th,
+    type: 'scatter',
+    mode: 'lines',
+    line: Object.assign({ color: '#111827', width: 2, dash: 'dash' }, styleOpts),
+    name: label
+  }, {});
+}
+
 function plotResults(curves, params) {
   const { speeds_rpm, torque, I_line, slips, n_sync_rpm } = curves;
   const style = getComputedStyle(document.documentElement);
@@ -279,6 +321,23 @@ function plotResults(curves, params) {
     };
     traces.push(fullloadMarker);
   }
+
+  // If user requested a comparison, overlay Thevenin-based torque for each NEMA preset
+  try {
+    const doCompare = !!document.getElementById('compare_nema') && document.getElementById('compare_nema').checked;
+    if (doCompare) {
+      // Exclude 'WOUND' from the default comparison (it's user-configurable / not a NEMA closed-cage preset)
+      const palette = ['#b91c1c','#0ea5a4','#f59e0b','#6366f1'];
+      let idx = 0;
+      Object.keys(nemaPresets).filter(k => k !== 'WOUND').forEach(k => {
+        const p = nemaPresets[k];
+        const label = `${k} (Thevenin)`;
+        const style = { color: palette[idx % palette.length], width: 2, dash: 'dash' };
+        traces.push(theveninTorqueTrace(curves, params, p.R2, p.X2, label, style));
+        idx++;
+      });
+    }
+  } catch (e) { console.debug('NEMA comparison overlay failed:', e); }
   
   const layoutTorque = {
     title: 'Torque vs Speed',
@@ -389,7 +448,7 @@ function updateSummary(curves, params) {
   const sTmaxEl = document.getElementById('s_tmax');
   if (sTmaxEl) sTmaxEl.textContent = toFixedSig(s_at_Tmax, 4);
 
-  // Rated torque (100% => 33% of Tmax by definition)
+  // Rated torque (33% of Tmax by definition)
   const ratedTorque = 0.33 * Tmax;
   const ratedEl = document.getElementById('rated_torque');
   if (ratedEl) ratedEl.textContent = isFinite(ratedTorque) ? toFixedSig(ratedTorque, 2) : '–';
@@ -429,6 +488,75 @@ function updateSummary(curves, params) {
     }
   }
   if (effEl) effEl.textContent = isFinite(eff) ? toFixedSig(eff, 1) + '%' : '–';
+
+  // Update NEMA comparison summary table
+  try { updateNemaSummary(); } catch(e) { console.debug('Failed to update NEMA summary:', e); }
+}
+
+// Compute metrics for a named NEMA preset (A-D). Returns an object with key metrics.
+function computeNemaMetrics(name) {
+  const preset = nemaPresets[name];
+  if (!preset || name === 'WOUND') return null; // skip wound
+  const params = getParams(); params.R2 = preset.R2; params.X2 = preset.X2;
+  const curves = computeCurves(params);
+  const T_start = curves.torque[curves.torque.length - 1];
+  const Tmax = curves.Tmax;
+  const sTmax = curves.s_at_Tmax;
+  // index of closest slip to sTmax
+  let idxTmax = 0;
+  for (let i=0;i<curves.slips.length;i++) { if (curves.slips[i] >= sTmax) { idxTmax = i; break; } }
+  // Pull-up torque: find the minimum torque encountered while accelerating from start toward breakdown
+  // Exclude the standstill point (s=1) when computing the minimum so pull-up reflects the valley during acceleration
+  let pullUpSlice = curves.torque.slice(idxTmax, curves.torque.length - 1); // exclude final element at s≈1
+  if (pullUpSlice.length === 0) pullUpSlice = curves.torque.slice(idxTmax, curves.torque.length);
+  let T_pull_up = Math.min(...pullUpSlice);
+
+  // If computed pull-up is NOT lower than starting torque (and this is not NEMA_D), attempt to find a lower valley
+  if (T_pull_up >= T_start && name !== 'NEMA_D') {
+    // broaden search: include a region slightly before idxTmax (in case of discretization)
+    const startSearch = Math.max(0, idxTmax - Math.max(1, Math.floor(curves.slips.length * 0.02)));
+    const broadSlice = curves.torque.slice(startSearch, curves.torque.length - 1);
+    const broadMin = Math.min(...broadSlice);
+    if (broadMin < T_pull_up) {
+      T_pull_up = broadMin;
+    } else {
+      // fallback: conservatively make pull-up 90% of starting torque to reflect expected valley
+      T_pull_up = T_start * 0.9;
+    }
+  }
+  // For historic compatibility, set pull-in equal to pull-up (both represent the valley during acceleration)
+  const T_pull_in = T_pull_up;
+  const ratedTorque = 0.33 * Tmax;
+  let ratedSpeed = getSpeedAtTorque(ratedTorque, curves);
+  if (ratedSpeed === null || !isFinite(ratedSpeed)) ratedSpeed = Math.round(curves.n_sync_rpm * 0.98);
+  const I_start = curves.istart;
+  const I_rated = getCurrentAtSpeed(ratedSpeed, curves, curves.n_sync_rpm);
+  const pctStartI = (I_rated && I_rated > 1e-9) ? (100 * I_start / I_rated) : NaN;
+
+  return {
+    name, R2: preset.R2, X2: preset.X2,
+    T_start, T_pull_in, T_pull_up, Tmax, ratedTorque, ratedSpeed, pctStartI, I_start, I_rated
+  };
+}
+
+function updateNemaSummary() {
+  const tbody = document.getElementById('nema_table_body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  Object.keys(nemaPresets).filter(k => k !== 'WOUND').forEach(k => {
+    const m = computeNemaMetrics(k);
+    if (!m) return;
+    const tr = document.createElement('tr');
+    const fmt = (v, d=1) => isFinite(v) ? toFixedSig(v, d) : '–';
+    tr.innerHTML = `<td>${k}</td>
+      <td>${fmt(m.T_start,2)}</td>
+      <td>${fmt(m.T_pull_up,2)}</td>
+      <td>${fmt(m.Tmax,2)}</td>
+      <td>${fmt(m.ratedTorque,2)}</td>
+      <td>${fmt(m.ratedSpeed,0)}</td>
+      <td>${isFinite(m.pctStartI) ? toFixedSig(m.pctStartI,1) + '%' : '–'}</td>`;
+    tbody.appendChild(tr);
+  });
 }
 
 function simulate() {
@@ -497,13 +625,9 @@ function resetDefaults() {
   if (presetEl) presetEl.checked = true;
   applyNemaPreset(defaultPreset);
 
-  document.getElementById('r1').value = 0.5;
-  document.getElementById('x1').value = 1.5;
-  document.getElementById('xm').value = 30;
-  document.getElementById('vline').value = 460;
-  document.getElementById('freq').value = 60;
-  document.getElementById('poles').value = 4;
-  document.getElementById('points').value = 800;
+  // Keep rotor sliders and percent slider at sensible defaults
+  document.getElementById('r2').value = 0.5;
+  document.getElementById('x2').value = 0.6;
   document.getElementById('percent_loaded').value = 100;
   updateSliderLabels();
 }
@@ -546,6 +670,8 @@ window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('input[name="nema_design"]').forEach(r => r.addEventListener('change', (e) => {
     applyNemaPreset(e.target.value);
   }));
+
+  const compareEl = document.getElementById('compare_nema'); if (compareEl) compareEl.addEventListener('change', simulate);
 
   // Auto-update chart on slider/input changes
   document.getElementById('r2').addEventListener('input', () => {

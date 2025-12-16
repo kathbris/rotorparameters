@@ -37,6 +37,9 @@
           <label><input type="radio" name="nema_design" value="NEMA_D" /> NEMA D</label></br>
           <label><input type="radio" name="nema_design" value="WOUND" /> Wound Rotor/Custom Design</label></br>
         </fieldset>
+        <div class="control">
+          <label><input type="checkbox" id="compare_nema" /> <strong>Compare all NEMA presets</strong></label>
+        </div>
         <!-- Rotor controls -->
         <div class="control rotor_control">
             <label for="r2">Rotor resistance R<sub>2</sub> (Ω)</label>
@@ -66,38 +69,14 @@
         </div>
 
 
-        <!-- Advanced (stator & system) -->
-        <details class="advanced" close>
-          <summary>Advanced parameters</summary>
-          <div class="control">
-            <label for="r1">Stator resistance R<sub>1</sub> (Ω)</label>
-            <input type="number" id="r1" step="0.01" value="0.5" />
+        <!-- Advanced parameters are now assumed constants for better realism -->
+        <div class="control" hidden="true">
+          <label>Assumed system parameters (fixed):</label>
+          <div class="small-row muted" style="font-size:0.95em;">
+            R1 = <strong>0.50 Ω</strong>, X1 = <strong>1.10 Ω</strong>, Xm = <strong>25 Ω</strong>, VL-L = <strong>460 V</strong>, f = <strong>60 Hz</strong>, p = <strong>4</strong>
           </div>
-          <div class="control">
-            <label for="x1">Stator reactance X<sub>1</sub> (Ω)</label>
-            <input type="number" id="x1" step="0.01" value="1.5" />
-          </div>
-          <div class="control">
-            <label for="xm">Magnetizing reactance X<sub>m</sub> (Ω)</label>
-            <input type="number" id="xm" step="0.1" value="30" />
-          </div>
-          <div class="control">
-            <label for="vline">Line voltage V<sub>L-L</sub> (V)</label>
-            <input type="number" id="vline" step="1" value="460" />
-          </div>
-          <div class="control">
-            <label for="freq">Frequency f (Hz)</label>
-            <input type="number" id="freq" step="1" value="60" />
-          </div>
-          <div class="control">
-            <label for="poles">Number of poles p</label>
-            <input type="number" id="poles" step="1" value="4" />
-          </div>
-        <div class="control">
-          <label for="points">Resolution (number of slip points)</label>
-          <input type="number" id="points" step="50" min="200" max="4000" value="800" />
+          <div class="muted" style="font-size:0.85em; margin-top:6px;">Advanced controls removed — these constants are used internally to produce results that better correlate with typical motor behavior.</div>
         </div>
-        </details>
         <div class="actions">
         </div>
       </div>
@@ -139,6 +118,30 @@
       </div>
     </section>
 
+    <section class="nema-compare" hidden="true">
+      <h2>NEMA Configuration Comparison</h2>
+      <p class="muted" style="font-size:0.95em;">Computed using the assumed system parameters shown above. Values are approximate and intended to illustrate typical relative behavior between NEMA rotor designs.</p>
+      <div class="table-wrap">
+        <table class="nema-table" aria-describedby="nema-compare">
+          <thead>
+            <tr>
+              <th>Design</th>
+              <th>Starting T (N·m)</th>
+              <th>Pull-up T (N·m)</th>
+              <th>Breakdown T (N·m)</th>
+              <th>Rated T (N·m)</th>
+              <th>Rated speed (rpm)</th>
+              <th>Start I / Rated I (%)</th>
+            </tr>
+          </thead>
+          <tbody id="nema_table_body">
+            <!-- Filled by JS -->
+          </tbody>
+        </table>
+        <div class="muted" style="font-size:0.85em; margin-top:6px;">Note: <strong>WOUND</strong> rotor preset is excluded from this NEMA comparison. Values are approximate and intended to illustrate relative behavior between NEMA A–D designs.</div>
+      </div>
+    </section>
+
     <section class="plots">
       <div class="plot" id="plot_torque">
         <div class="plot-header">
@@ -163,6 +166,7 @@
         <li>Total impedance: <code>Z = (R<sub>1</sub> + jX<sub>1</sub>) + big[(jX<sub>m</sub>) parallel (R<sub>2</sub>/s + jX<sub>2</sub>)big]</code>.</li>
         <li>Line current magnitude computed from <code>I = V_phase / |Z|</code> with <code>V_phase = V_{L-L}/sqrt{3}</code> for Y connection.</li>
         <li>Air-gap power <code>P_ag = 3,|I_2|^2,(R<sub>2</sub>/s)</code>, torque <code>T = P_ag / omega_{sync}</code>, with synchronous speed <code>omega_{sync} = 4pi f / p</code>.</li>
+        <li>You can compare analytical Thevenin torque curves for each NEMA preset using the "Compare all NEMA presets" checkbox in the presets panel.</li>
         <li>Mechanical losses are neglected; results illustrate trends rather than exact nameplate values.</li>
       </ul>
     </section>

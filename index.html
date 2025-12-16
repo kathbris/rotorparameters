@@ -40,12 +40,12 @@
         <!-- Rotor controls -->
         <div class="control rotor_control">
             <label for="r2">Rotor resistance R<sub>2</sub> (Ω)</label>
-            <input type="range" id="r2" min="0.05" max="2" step="0.01" value="0.3" />
+            <input type="range" id="r2" min="0.05" max="5" step="0.01" value="0.3" />
             <span id="r2_val">0.30 Ω</span>
           </div>
           <div class="control rotor_control">
             <label for="x2">Rotor reactance X<sub>2</sub> (Ω)</label>
-            <input type="range" id="x2" min="0.05" max="2" step="0.01" value="0.5" />
+            <input type="range" id="x2" min="0.05" max="5" step="0.01" value="0.5" />
             <span id="x2_val">0.50 Ω</span>
           </div>
         <div class="control">
@@ -107,20 +107,34 @@
       <h2>Key Results</h2>
       <div class="cards">
         <div class="card">
-          <h3>Peak (Breakdown) Torque</h3>
-          <p><span id="tmax">–</span> N·m at slip <span id="s_tmax">–</span></p>
+          <h3>Torque</h3>
+          <p>Rated torque: <span id="rated_torque">–</span> N·m</p>
+          <p>Starting torque: <span id="t_start_pct">–</span> % of rated</p>
+          <p>Breakdown: <span id="tmax">–</span> N·m at slip <span id="s_tmax">–</span></p>
         </div>
         <div class="card">
           <h3>Starting Current (s=1)</h3>
           <p><span id="istart">–</span> A (line)</p>
         </div>
         <div class="card">
-          <h3>No-load Current (s→0)</h3>
+          <h3>No-load Current (s=0)</h3>
           <p><span id="inl">–</span> A (line)</p>
         </div>
         <div class="card">
           <h3>Loaded Speed Current</h3>
           <p><span id="iloaded">–</span> A (line)</p>
+        </div>
+        <div class="card">
+          <h3>Loaded Power</h3>
+          <p><span id="hp_loaded">–</span> hp</p>
+        </div>
+        <div class="card">
+          <h3>Speed Regulation</h3>
+          <p><span id="speed_reg">–</span> %</p>
+        </div>
+        <div class="card">
+          <h3>Efficiency</h3>
+          <p><span id="efficiency">–</span></p>
         </div>
       </div>
     </section>
@@ -142,7 +156,7 @@
       </div>
     </section>
 
-    <section class="notes">
+    <section class="notes" hidden="true">
       <h2>Model Notes</h2>
       <ul>
         <li>Per-phase approximate equivalent circuit with magnetizing branch <code>X<sub>m</sub></code> in parallel with rotor branch (<code>R<sub>2</sub>/s + jX<sub>2</sub></code>).</li>

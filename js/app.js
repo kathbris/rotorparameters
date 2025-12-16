@@ -18,12 +18,13 @@ function toFixedSig(n, digits=3) {
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
-// NEMA rotor presets (R2, X2) chosen to illustrate typical torque-speed behavior
+// NEMA rotor presets (R2, X2) updated to match locked-rotor resistance guidance
+// Values reflect typical locked-rotor resistances (approx): A=0.5, B=0.6, C=1.0, D=2.0
 const nemaPresets = {
-  'NEMA_A': { R2: 0.4, X2: 0.5 },
-  'NEMA_B': { R2: 0.3, X2: 0.5 },
-  'NEMA_C': { R2: 0.7, X2: 0.6 },
-  'NEMA_D': { R2: 1.2, X2: 0.8 },
+  'NEMA_A': { R2: 0.4, X2: 0.4 },
+  'NEMA_B': { R2: 0.5, X2: 0.6 },
+  'NEMA_C': { R2: .9, X2: 0.5 },
+  'NEMA_D': { R2: 3, X2: 0.1 },
   'WOUND': { R2: 0.05, X2: 0.2 }
 };
 
@@ -44,6 +45,14 @@ function applyNemaPreset(name) {
     }
   }
   updateSliderLabels();
+  // simulate with the preset and log starting torque for quick verification
+  try {
+    const params = getParams();
+    params.R2 = preset.R2; params.X2 = preset.X2;
+    const curves = computeCurves(params);
+    const T_start = curves.torque[curves.torque.length - 1];
+    console.debug(`Applied NEMA preset ${name}: starting torque ≈ ${toFixedSig(T_start,2)} N·m`);
+  } catch (e) { console.debug('Applied NEMA preset but failed to compute start torque:', e); }
   simulate();
 }
 
@@ -73,6 +82,8 @@ function computeCurves(params) {
   const speeds_rpm = [];
   const torque = [];
   const I_line = [];
+  const Pag_arr = [];
+  const P_input_arr = [];
 
   const s_min = 1e-4; // avoid singularity at s=0
   const s_max = 1.0;  // starting
@@ -92,14 +103,18 @@ function computeCurves(params) {
     const Pag = 3 * (cMag(I2)**2) * (R2/s); // air-gap power (W)
     const T = Pag / w_sync; // torque (N·m)
 
+    // Input electrical real power (total) approximated as 3*V_phase*Re(I)
+    const P_input = 3 * Vph * I.re;
+
     const n_rpm = n_sync_rpm * (1 - s);
 
     slips.push(s);
     speeds_rpm.push(n_rpm);
     torque.push(T);
     I_line.push(cMag(I)); // line current magnitude (Y-connected)
+    Pag_arr.push(Pag);
+    P_input_arr.push(P_input);
   }
-
   // Find breakdown torque and slip
   let Tmax = -Infinity, s_at_Tmax = NaN;
   for (let i=0; i<torque.length; i++) {
@@ -109,7 +124,7 @@ function computeCurves(params) {
   const istart = I_line[I_line.length - 1]; // s=1 at end
   const inoload = I_line[0]; // s≈0 at start
 
-  return { slips, speeds_rpm, torque, I_line, n_sync_rpm, Tmax, s_at_Tmax, istart, inoload };
+  return { slips, speeds_rpm, torque, I_line, Pag_arr, P_input_arr, n_sync_rpm, Tmax, s_at_Tmax, istart, inoload };
 }
 
 function getTorqueAtSpeed(speed, curves) {
@@ -197,6 +212,23 @@ function getCurrentAtSpeed(speed, curves, n_sync_rpm) {
   return current;
 }
 
+// Interpolate total input electrical power at a given speed
+function getInputAtSpeed(speed, curves) {
+  const slip = 1 - (speed / curves.n_sync_rpm);
+  const { slips, P_input_arr } = curves;
+  const minSlip = Math.min(...slips);
+  const maxSlip = Math.max(...slips);
+  if (slip < minSlip || slip > maxSlip) return null;
+  let idx = 0;
+  for (let i = 0; i < slips.length - 1; i++) {
+    if ((slips[i] <= slip && slip <= slips[i + 1]) || (slips[i] >= slip && slip >= slips[i + 1])) { idx = i; break; }
+  }
+  const s1 = slips[idx], s2 = slips[idx+1];
+  const p1 = P_input_arr[idx], p2 = P_input_arr[idx+1];
+  if (s2 === s1) return p1;
+  return p1 + (p2 - p1) * (slip - s1) / (s2 - s1);
+}
+
 function plotResults(curves, params) {
   const { speeds_rpm, torque, I_line, slips, n_sync_rpm } = curves;
   const style = getComputedStyle(document.documentElement);
@@ -277,7 +309,7 @@ function plotResults(curves, params) {
       }
     ];
   }
-  Plotly.newPlot('torquePlot', traces, layoutTorque, {displayModeBar: true});
+  Plotly.newPlot('torquePlot', traces, layoutTorque, {displayModeBar: true, responsive: true});
 
   // Current vs slip (or speed)
   const currentTrace = {
@@ -332,7 +364,7 @@ function plotResults(curves, params) {
     font: { color: textColor },
     margin: { t: 40, r: 20, b: 60, l: 60 }
   };
-  Plotly.newPlot('currentPlot', currentTraces, layoutCurrent, {displayModeBar: true});
+  Plotly.newPlot('currentPlot', currentTraces, layoutCurrent, {displayModeBar: true, responsive: true});
 }
 
 function updateSummary(curves, params) {
@@ -342,12 +374,61 @@ function updateSummary(curves, params) {
   
   // Calculate current at loaded speed
   const I_fullload = getCurrentAtSpeed(speed_fullload, curves, n_sync_rpm);
+  // Calculate torque at loaded speed and convert to horsepower
+  const T_fullload = getTorqueAtSpeed(speed_fullload, curves);
+  let hp = NaN;
+  if (T_fullload !== null && isFinite(speed_fullload)) {
+    const omega = 2 * Math.PI * (speed_fullload / 60); // rad/s
+    const watts = T_fullload * omega;
+    hp = watts / 745.699872; // convert W to hp
+  }
   
-  document.getElementById('tmax').textContent = toFixedSig(Tmax, 2);
-  document.getElementById('s_tmax').textContent = toFixedSig(s_at_Tmax, 4);
+  // Breakdown torque and slip
+  const tmaxEl = document.getElementById('tmax');
+  if (tmaxEl) tmaxEl.textContent = toFixedSig(Tmax, 2);
+  const sTmaxEl = document.getElementById('s_tmax');
+  if (sTmaxEl) sTmaxEl.textContent = toFixedSig(s_at_Tmax, 4);
+
+  // Rated torque (100% => 33% of Tmax by definition)
+  const ratedTorque = 0.33 * Tmax;
+  const ratedEl = document.getElementById('rated_torque');
+  if (ratedEl) ratedEl.textContent = isFinite(ratedTorque) ? toFixedSig(ratedTorque, 2) : '–';
+
+  // Starting torque as percent of rated
+  const t_start = curves.torque[curves.torque.length - 1];
+  const tStartPctEl = document.getElementById('t_start_pct');
+  const pct = (isFinite(ratedTorque) && ratedTorque !== 0) ? (100 * t_start / ratedTorque) : NaN;
+  if (tStartPctEl) tStartPctEl.textContent = isFinite(pct) ? toFixedSig(pct, 1) : '–';
+
+  // Currents / loaded power (unchanged)
   document.getElementById('istart').textContent = toFixedSig(istart, 1);
   document.getElementById('inl').textContent = toFixedSig(inoload, 1);
   document.getElementById('iloaded').textContent = I_fullload !== null ? toFixedSig(I_fullload, 1) : '–';
+  const hpEl = document.getElementById('hp_loaded');
+  if (hpEl) hpEl.textContent = (isFinite(hp) ? toFixedSig(hp, 2) : '–');
+
+  // Speed regulation = (No-load - Full-load) / Full-load * 100%
+  const regEl = document.getElementById('speed_reg');
+  const speed_noload = params.speed_noload;
+  let reg = NaN;
+  if (isFinite(speed_noload) && isFinite(speed_fullload) && speed_fullload !== 0) {
+    reg = ((speed_noload - speed_fullload) / speed_fullload) * 100;
+  }
+  if (regEl) regEl.textContent = isFinite(reg) ? toFixedSig(reg, 2) : '–';
+
+  // Efficiency at loaded speed = P_shaft / P_input
+  const effEl = document.getElementById('efficiency');
+  let eff = NaN;
+  if (isFinite(speed_fullload) && speed_fullload !== 0) {
+    const T_f = getTorqueAtSpeed(speed_fullload, curves);
+    const omega_m = 2 * Math.PI * (speed_fullload / 60);
+    const P_shaft = (T_f !== null) ? (T_f * omega_m) : NaN;
+    const P_in = getInputAtSpeed(speed_fullload, curves);
+    if (isFinite(P_shaft) && isFinite(P_in) && P_in > 1e-9) {
+      eff = (P_shaft / P_in) * 100;
+    }
+  }
+  if (effEl) effEl.textContent = isFinite(eff) ? toFixedSig(eff, 1) + '%' : '–';
 }
 
 function simulate() {
@@ -477,24 +558,24 @@ window.addEventListener('DOMContentLoaded', () => {
     updateRangeFill(document.getElementById('x2'));
     simulate();
   });
-  document.getElementById('freq').addEventListener('input', simulate);
-  document.getElementById('poles').addEventListener('input', simulate);
-  document.getElementById('r1').addEventListener('input', simulate);
-  document.getElementById('x1').addEventListener('input', simulate);
-  document.getElementById('xm').addEventListener('input', simulate);
-  document.getElementById('vline').addEventListener('input', simulate);
-  document.getElementById('points').addEventListener('input', simulate);
+  const freqEl = document.getElementById('freq'); if (freqEl) freqEl.addEventListener('input', simulate);
+  const polesEl = document.getElementById('poles'); if (polesEl) polesEl.addEventListener('input', simulate);
+  const r1El = document.getElementById('r1'); if (r1El) r1El.addEventListener('input', simulate);
+  const x1El = document.getElementById('x1'); if (x1El) x1El.addEventListener('input', simulate);
+  const xmEl = document.getElementById('xm'); if (xmEl) xmEl.addEventListener('input', simulate);
+  const vlineEl = document.getElementById('vline'); if (vlineEl) vlineEl.addEventListener('input', simulate);
+  const pointsEl = document.getElementById('points'); if (pointsEl) pointsEl.addEventListener('input', simulate);
   // no direct user input for no-load speed anymore; it's auto-calculated
   const percentSlider = document.getElementById('percent_loaded');
   if (percentSlider) {
     percentSlider.addEventListener('input', () => { updateSliderLabels(); updateRangeFill(percentSlider); simulate(); });
   }
   
-  document.getElementById('simulate').addEventListener('click', simulate);
+  const simulateBtn = document.getElementById('simulate'); if (simulateBtn) simulateBtn.addEventListener('click', simulate);
   // Reset button removed; keep `resetDefaults` available for developers.
   // Plot toggle buttons (minimize/maximize)
   const toggleTorque = document.getElementById('toggle_torque');
-  const toggleCurrent = document.getElementById('toggle_current');
+  const toggleRotor = document.getElementById('toggle_rotor_current');
   if (toggleTorque) {
     toggleTorque.addEventListener('click', () => {
       const plotEl = document.getElementById('plot_torque');
@@ -508,18 +589,33 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-  if (toggleCurrent) {
-    toggleCurrent.addEventListener('click', () => {
-      const plotEl = document.getElementById('plot_current');
+  if (toggleRotor) {
+    toggleRotor.addEventListener('click', () => {
+      const plotEl = document.getElementById('plot_rotor_current');
       if (!plotEl) return;
       plotEl.classList.toggle('minimized');
-      const btn = toggleCurrent;
+      const btn = toggleRotor;
       btn.textContent = plotEl.classList.contains('minimized') ? '+' : '–';
       if (!plotEl.classList.contains('minimized')) {
-        try { Plotly.Plots.resize(document.getElementById('currentPlot')); } catch(e){}
+        try { Plotly.Plots.resize(document.getElementById('rotorCurrentPlot')); } catch(e){}
       }
     });
   }
+  // Make plots responsive to window resize (debounced)
+  function debounce(fn, wait = 150) {
+    let t = null;
+    return function(...args) {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => { t = null; fn(...args); }, wait);
+    };
+  }
+  const handleResize = debounce(() => {
+    try { const el = document.getElementById('torquePlot'); if (el) Plotly.Plots.resize(el); } catch(e){}
+    try { const el2 = document.getElementById('currentPlot'); if (el2) Plotly.Plots.resize(el2); } catch(e){}
+    try { const el3 = document.getElementById('rotorCurrentPlot'); if (el3) Plotly.Plots.resize(el3); } catch(e){}
+  }, 120);
+  window.addEventListener('resize', handleResize);
+
   // Initial run
   // Ensure all range fills are initialized before first simulate
   updateRangeFills();
